@@ -2,6 +2,10 @@
 
 An AI-powered assistant for family caregivers managing the health and well-being of their loved ones. Built with a multi-model architecture using local and cloud LLMs, it provides reliable clinical guidance, tracks vitals and episodes, and helps caregivers communicate effectively with healthcare providers.
 
+
+https://github.com/user-attachments/assets/7f80e7a4-eadb-4039-aea3-146e50d37998
+
+
 ## ✨ Features
 
 - **Care Recipient Management** — Onboard care recipients with conditions, allergies, medications, and provider contacts
