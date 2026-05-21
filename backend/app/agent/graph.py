@@ -2,16 +2,19 @@
 
 Graph topology:
     START
-      └── router
+      └── router  (keyword classify + parallel context load)
             ├── casual_chat → casual_handler → END
-            └── (other intents) → context_loader → generator → verifier
-                                                                    ├── passed → END
-                                                                    ├── failed + retries left → generator (retry)
-                                                                    └── failed + max retries → escalation → END
+            └── (other intents) → generator
+                                      ├── no medical tools → END          (verifier skipped)
+                                      └── medical tools used → verifier
+                                              ├── passed → END
+                                              ├── failed + retries left → generator (retry)
+                                              └── failed + max retries → escalation → END
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -22,15 +25,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.state import AgentState
 from app.models.enums import MessageIntent
 
+logger = logging.getLogger(__name__)
+
 MAX_REGENERATIONS = 2
+
+# Tools whose output warrants an independent verifier review.
+# Everything else (context lookups, scheduling, logging) passes through directly.
+_MEDICAL_TOOLS_REQUIRING_VERIFICATION = frozenset({
+    "check_drug_interactions",
+    "lookup_medication_side_effects",
+    "check_symptom_medication_link",
+    "assess_urgency",
+})
 
 
 def _route_after_router(state: AgentState) -> str:
-    """Edge function: route casual chat to fast path, everything else to clinical path."""
+    """Edge function: route casual chat to fast path, everything else to generator."""
     intent = state.get("intent", MessageIntent.symptom_report.value)
     if intent == MessageIntent.casual_chat.value:
         return "casual_handler"
-    return "context_loader"
+    return "generator"
+
+
+def _route_after_generator(state: AgentState) -> str:
+    """Skip verifier unless the generator called a medical tool that needs review."""
+    tools_called = state.get("tools_called", [])
+    used = {tc.get("tool_name") for tc in tools_called}
+    if used & _MEDICAL_TOOLS_REQUIRING_VERIFICATION:
+        logger.info("Medical tools used %s — routing to verifier", used & _MEDICAL_TOOLS_REQUIRING_VERIFICATION)
+        return "verifier"
+    return END
 
 
 def _route_after_verifier(state: AgentState) -> str:
@@ -57,31 +81,27 @@ def _increment_regen(state: AgentState) -> dict[str, Any]:
 def build_graph(db: AsyncSession) -> Any:
     """Build and compile the LangGraph state machine.
 
-    The db session is injected into all nodes that need DB access via closures.
+    The db session is injected into nodes that need DB access via closures.
     """
     from app.agent.nodes.router import router_node
     from app.agent.nodes.casual_handler import casual_handler_node
-    from app.agent.nodes.context_loader import context_loader_node
     from app.agent.nodes.generator import generator_node
     from app.agent.nodes.verifier import verifier_node
     from app.agent.nodes.escalation import escalation_node
     from app.agent.tracing import trace_node
 
-    # Wrap DB-dependent nodes to inject the session + tracing
-    @trace_node("context_loader")
-    async def _context_loader(state: AgentState) -> dict:
-        return await context_loader_node(state, db)
+    @trace_node("router")
+    async def _router(state: AgentState) -> dict:
+        return await router_node(state, db)
 
     @trace_node("generator")
     async def _generator(state: AgentState) -> dict:
-        updates = await generator_node(state, db)
-        return updates
+        return await generator_node(state, db)
 
     graph = StateGraph(AgentState)
 
-    graph.add_node("router", router_node)
+    graph.add_node("router", _router)
     graph.add_node("casual_handler", casual_handler_node)
-    graph.add_node("context_loader", _context_loader)
     graph.add_node("generator", _generator)
     graph.add_node("verifier", verifier_node)
     graph.add_node("escalation", escalation_node)
@@ -89,8 +109,7 @@ def build_graph(db: AsyncSession) -> Any:
     graph.add_edge(START, "router")
     graph.add_conditional_edges("router", _route_after_router)
     graph.add_edge("casual_handler", END)
-    graph.add_edge("context_loader", "generator")
-    graph.add_edge("generator", "verifier")
+    graph.add_conditional_edges("generator", _route_after_generator)
     graph.add_conditional_edges("verifier", _route_after_verifier)
     graph.add_edge("escalation", END)
 
@@ -105,11 +124,14 @@ async def run_graph(
     thread_id: uuid.UUID | None = None,
     clerk_user_id: str = "",
     history: list[dict[str, str]] | None = None,
+    stream_id: str | None = None,
 ) -> dict[str, Any]:
     """Invoke the compiled LangGraph and return the final state.
 
     history: prior user/assistant turns for this thread, oldest first.
     The current user_message is appended as the final entry.
+    stream_id: if set, generator/casual_handler nodes will push tokens into
+    the registered queue so the SSE route can forward them in real-time.
     """
     compiled = build_graph(db)
 
@@ -130,6 +152,7 @@ async def run_graph(
         "verifier_result": None,
         "regeneration_count": 0,
         "escalated": False,
+        "stream_id": stream_id,
     }
 
     config = {"configurable": {"thread_id": str(thread_id or uuid.uuid4())}}
