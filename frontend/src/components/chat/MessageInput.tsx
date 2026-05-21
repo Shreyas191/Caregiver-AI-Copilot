@@ -2,14 +2,16 @@
 
 import { useState, useRef, type KeyboardEvent } from 'react';
 import { Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
-type MessageInputProps = {
+const MONO: React.CSSProperties = { fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+
+export function MessageInput({
+  onSend,
+  disabled,
+}: {
   onSend: (content: string) => void;
   disabled?: boolean;
-};
-
-export function MessageInput({ onSend, disabled }: MessageInputProps) {
+}) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,9 +39,17 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
+  const canSend = !disabled && !!value.trim();
+
   return (
-    <div className="border-t border-gray-200 bg-white px-4 py-3">
-      <div className="flex items-end gap-2 max-w-3xl mx-auto">
+    <div
+      className="shrink-0 px-4 md:px-6 pt-3 pb-4"
+      style={{
+        background: 'var(--background)',
+        borderTop: '1px solid var(--border)',
+      }}
+    >
+      <div className="max-w-3xl mx-auto flex items-end gap-3">
         <textarea
           ref={textareaRef}
           rows={1}
@@ -48,19 +58,54 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           disabled={disabled}
-          placeholder="Message the assistant… (Enter to send, Shift+Enter for newline)"
-          className="flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 overflow-hidden"
-          style={{ minHeight: '40px', maxHeight: '160px' }}
+          placeholder="Ask about medications, symptoms, or care decisions…"
+          className="flex-1 resize-none text-sm leading-relaxed focus:outline-none transition-all duration-150 disabled:opacity-50"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            color: 'var(--foreground)',
+            padding: '10px 14px',
+            minHeight: '44px',
+            maxHeight: '160px',
+            fontFamily: 'var(--font-source-sans), system-ui, sans-serif',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent)';
+            e.currentTarget.style.boxShadow = '0 0 0 2px rgba(184,134,11,0.15)';
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
-        <Button
-          size="sm"
+
+        <button
           onClick={submit}
-          disabled={disabled || !value.trim()}
-          className="shrink-0 h-10 w-10 rounded-xl p-0"
+          disabled={!canSend}
+          className="shrink-0 flex items-center justify-center rounded-lg transition-all duration-200"
+          style={{
+            width: '44px',
+            height: '44px',
+            background: canSend ? 'var(--accent)' : 'var(--muted)',
+            color: canSend ? 'var(--accent-foreground)' : 'var(--muted-foreground)',
+            border: canSend ? 'none' : '1px solid var(--border)',
+            cursor: canSend ? 'pointer' : 'not-allowed',
+            boxShadow: canSend ? '0 1px 3px rgba(184,134,11,0.2)' : 'none',
+          }}
+          aria-label="Send message"
         >
           <Send className="h-4 w-4" />
-        </Button>
+        </button>
       </div>
+
+      {/* Hint */}
+      <p
+        className="text-center mt-2 text-xs uppercase tracking-[0.1em]"
+        style={{ ...MONO, color: 'var(--muted-foreground)', opacity: 0.5 }}
+      >
+        Enter to send · Shift+Enter for newline
+      </p>
     </div>
   );
 }

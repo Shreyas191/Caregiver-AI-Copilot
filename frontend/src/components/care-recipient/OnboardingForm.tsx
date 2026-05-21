@@ -6,10 +6,9 @@ import { useAuth } from '@clerk/nextjs';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -27,8 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
+/* ── Types & schema ─────────────────────────────────────────── */
 const formSchema = z.object({
   display_name: z.string().min(1, 'Name is required'),
   date_of_birth: z.string().min(1, 'Date of birth is required'),
@@ -64,11 +63,46 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+/* ── Step config ────────────────────────────────────────────── */
+const STEPS = {
+  1: { label: 'Basic Info',  title: 'Who are you caring for?',   sub: 'Start with the basics — name, date of birth, and sex at birth.' },
+  2: { label: 'Conditions',  title: 'Medical Conditions',        sub: 'Add any known diagnoses, chronic illnesses, or recent conditions.' },
+  3: { label: 'Allergies',   title: 'Allergies',                 sub: 'Add known allergies to medications, food, or environment.' },
+  4: { label: 'Contacts',    title: 'Care Contacts',             sub: 'Primary care provider and an emergency contact.' },
+  5: { label: 'Consent',     title: 'Consent & Notes',           sub: 'Confirm your relationship and add any baseline health notes.' },
+} as const;
+
+const TOTAL = 5;
+
+/* ── Style helpers ──────────────────────────────────────────── */
+const SERIF: React.CSSProperties = { fontFamily: 'var(--font-playfair), Georgia, serif' };
+const MONO: React.CSSProperties  = { fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <FormLabel
+      className="text-xs font-medium uppercase tracking-[0.12em] leading-none"
+      style={{ ...MONO, color: 'var(--muted-foreground)' }}
+    >
+      {children}
+    </FormLabel>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-lg mb-1" style={SERIF}>
+      {children}
+    </h3>
+  );
+}
+
+/* ── Main component ─────────────────────────────────────────── */
 export default function OnboardingForm() {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const { getToken } = useAuth();
   const router = useRouter();
 
@@ -101,22 +135,14 @@ export default function OnboardingForm() {
   });
 
   const nextStep = async () => {
-    let fieldsToValidate: any[] = [];
-    if (step === 1) fieldsToValidate = ['display_name', 'date_of_birth', 'sex_at_birth'];
-    if (step === 2) fieldsToValidate = ['conditions'];
-    if (step === 3) fieldsToValidate = ['allergies'];
-    if (step === 4) fieldsToValidate = [
-      'primary_provider_name',
-      'primary_provider_email',
-      'primary_provider_phone',
-      'emergency_contact_name',
-      'emergency_contact_phone',
-    ];
-
-    const isValid = await form.trigger(fieldsToValidate);
-    if (isValid) {
-      setStep((s) => s + 1);
-    }
+    const fieldsMap: Record<number, any[]> = {
+      1: ['display_name', 'date_of_birth', 'sex_at_birth'],
+      2: ['conditions'],
+      3: ['allergies'],
+      4: ['primary_provider_name', 'primary_provider_email', 'primary_provider_phone', 'emergency_contact_name', 'emergency_contact_phone'],
+    };
+    const isValid = await form.trigger(fieldsMap[step] ?? []);
+    if (isValid) setStep((s) => s + 1);
   };
 
   const prevStep = () => setStep((s) => s - 1);
@@ -126,8 +152,6 @@ export default function OnboardingForm() {
     setError(null);
     try {
       const token = await getToken();
-      
-      // Clean up empty strings to undefined to match schema Optionals
       const payload = {
         ...data,
         primary_provider_name: data.primary_provider_name || undefined,
@@ -137,7 +161,6 @@ export default function OnboardingForm() {
         emergency_contact_phone: data.emergency_contact_phone || undefined,
         baseline_notes: data.baseline_notes || undefined,
       };
-
       const response = await api.careRecipients.create(token!, payload);
       router.push(`/care-recipients/${response.id}`);
     } catch (err: any) {
@@ -146,98 +169,126 @@ export default function OnboardingForm() {
     }
   };
 
+  const current = STEPS[step as keyof typeof STEPS];
+
   return (
-    <Card className="w-full max-w-2xl mx-auto border-gray-200 bg-white shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-2xl font-semibold text-gray-900">
-          Add Care Recipient
-        </CardTitle>
-        <CardDescription className="text-gray-500">Step {step} of 5</CardDescription>
-        <div className="w-full h-1 bg-gray-100 rounded-full mt-4">
-          <div 
-            className="h-1 bg-blue-600 rounded-full transition-all duration-300"
-            style={{ width: `${(step / 5) * 100}%` }}
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderTop: '2px solid var(--accent)',
+        borderRadius: '8px',
+        boxShadow: '0 4px 16px rgba(26,26,26,0.06)',
+      }}
+    >
+      {/* ── Progress & step header ─────────────────────────────── */}
+      <div className="px-7 pt-7 pb-6">
+        {/* Progress track */}
+        <div className="w-full h-px mb-6 rounded-full" style={{ background: 'var(--border)' }}>
+          <div
+            className="h-px rounded-full transition-all duration-500"
+            style={{ width: `${(step / TOTAL) * 100}%`, background: 'var(--accent)' }}
           />
         </div>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* STEP 1 */}
-            <div className={step === 1 ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
-              <div className="space-y-4">
+
+        {/* Step label */}
+        <p
+          className="text-xs font-medium uppercase tracking-[0.15em] mb-2"
+          style={{ ...MONO, color: 'var(--accent)' }}
+        >
+          Step {step} of {TOTAL} — {current.label}
+        </p>
+        <h2 className="text-2xl mb-1" style={SERIF}>{current.title}</h2>
+        <p className="text-sm leading-[1.75]" style={{ color: 'var(--muted-foreground)' }}>
+          {current.sub}
+        </p>
+      </div>
+
+      {/* Divider */}
+      <div className="h-px mx-7" style={{ background: 'var(--border)' }} />
+
+      {/* ── Form body ──────────────────────────────────────────── */}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="px-7 py-7">
+
+            {/* ── Step 1: Basic info ── */}
+            <div className={step === 1 ? 'block' : 'hidden'}>
+              <div className="space-y-5">
                 <FormField
                   control={form.control}
                   name="display_name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-gray-700">Full Name *</FormLabel>
+                      <FieldLabel>Full Name *</FieldLabel>
                       <FormControl>
-                        <Input placeholder="John Doe" className="bg-white border-gray-300" {...field} />
+                        <Input placeholder="Eleanor Kaldate" {...field} />
                       </FormControl>
-                      <FormMessage />
+                      <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="date_of_birth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-gray-700">Date of Birth *</FormLabel>
-                      <FormControl>
-                        <Input type="date" className="bg-white border-gray-300" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="sex_at_birth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-gray-700">Sex at Birth *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <FormField
+                    control={form.control}
+                    name="date_of_birth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FieldLabel>Date of Birth *</FieldLabel>
                         <FormControl>
-                          <SelectTrigger className="bg-white border-gray-300">
-                            <SelectValue placeholder="Select sex at birth" />
-                          </SelectTrigger>
+                          <Input type="date" {...field} />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="male">Male</SelectItem>
-                          <SelectItem value="female">Female</SelectItem>
-                          <SelectItem value="intersex">Intersex</SelectItem>
-                          <SelectItem value="unknown">Unknown</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sex_at_birth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FieldLabel>Sex at Birth *</FieldLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select…" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="intersex">Intersex</SelectItem>
+                            <SelectItem value="unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
             </div>
 
-            {/* STEP 2 */}
-            <div className={step === 2 ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-1">Medical Conditions</h3>
-                  <p className="text-sm text-gray-500 mb-4">Add known medical conditions, chronic illnesses, or recent diagnoses.</p>
-                </div>
+            {/* ── Step 2: Conditions ── */}
+            <div className={step === 2 ? 'block' : 'hidden'}>
+              <div className="space-y-3">
                 {conditionFields.map((field, index) => (
-                  <div key={field.id} className="flex gap-4 items-end border border-gray-200 bg-gray-50 p-4 rounded-md">
+                  <div
+                    key={field.id}
+                    className="p-5 rounded-lg flex gap-4 items-start"
+                    style={{ background: 'var(--muted)', border: '1px solid var(--border)' }}
+                  >
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
                       <FormField
                         control={form.control}
                         name={`conditions.${index}.name`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">Condition Name *</FormLabel>
+                            <FieldLabel>Condition *</FieldLabel>
                             <FormControl>
-                              <Input placeholder="e.g., Type 2 Diabetes" className="bg-white border-gray-300" {...field} />
+                              <Input placeholder="Type 2 Diabetes" {...field} />
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
                           </FormItem>
                         )}
                       />
@@ -246,11 +297,10 @@ export default function OnboardingForm() {
                         name={`conditions.${index}.icd10_code`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">ICD-10 (Optional)</FormLabel>
+                            <FieldLabel>ICD-10</FieldLabel>
                             <FormControl>
-                              <Input placeholder="E11.9" className="bg-white border-gray-300" {...field} />
+                              <Input placeholder="E11.9" {...field} />
                             </FormControl>
-                            <FormMessage />
                           </FormItem>
                         )}
                       />
@@ -259,52 +309,71 @@ export default function OnboardingForm() {
                         name={`conditions.${index}.diagnosed_date`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">Diagnosed (Optional)</FormLabel>
+                            <FieldLabel>Diagnosed</FieldLabel>
                             <FormControl>
-                              <Input placeholder="YYYY or YYYY-MM" className="bg-white border-gray-300" {...field} />
+                              <Input placeholder="YYYY or YYYY-MM" {...field} />
                             </FormControl>
-                            <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeCondition(index)} className="hover:bg-red-50 hover:text-red-600 text-gray-400">
+                    <button
+                      type="button"
+                      onClick={() => removeCondition(index)}
+                      className="mt-5 shrink-0 transition-colors duration-200"
+                      style={{ color: 'var(--muted-foreground)' }}
+                      onMouseOver={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#9A3412'; }}
+                      onMouseOut={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
+                    >
                       <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </button>
                   </div>
                 ))}
-                <Button
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-gray-300 bg-white hover:bg-gray-50 text-blue-600 border-dashed w-full py-6"
                   onClick={() => appendCondition({ name: '', icd10_code: '', diagnosed_date: '' })}
+                  className="w-full flex items-center justify-center gap-2 py-4 rounded-lg transition-colors duration-200"
+                  style={{
+                    border: '1px dashed var(--accent)',
+                    color: 'var(--accent)',
+                    background: 'rgba(184,134,11,0.03)',
+                    ...MONO,
+                    fontSize: '0.7rem',
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                  }}
                 >
-                  <Plus className="h-4 w-4 mr-2" /> Add Condition
-                </Button>
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Condition
+                </button>
+                {conditionFields.length === 0 && (
+                  <p className="text-center text-sm py-2" style={{ color: 'var(--muted-foreground)' }}>
+                    No conditions added yet — that&apos;s fine, you can skip this step.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* STEP 3 */}
-            <div className={step === 3 ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-1">Allergies</h3>
-                  <p className="text-sm text-gray-500 mb-4">Add known allergies to medications, food, or environment.</p>
-                </div>
+            {/* ── Step 3: Allergies ── */}
+            <div className={step === 3 ? 'block' : 'hidden'}>
+              <div className="space-y-3">
                 {allergyFields.map((field, index) => (
-                  <div key={field.id} className="flex gap-4 items-end border border-gray-200 bg-gray-50 p-4 rounded-md">
+                  <div
+                    key={field.id}
+                    className="p-5 rounded-lg flex gap-4 items-start"
+                    style={{ background: 'var(--muted)', border: '1px solid var(--border)' }}
+                  >
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
                       <FormField
                         control={form.control}
                         name={`allergies.${index}.substance`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">Substance *</FormLabel>
+                            <FieldLabel>Substance *</FieldLabel>
                             <FormControl>
-                              <Input placeholder="e.g., Penicillin" className="bg-white border-gray-300" {...field} />
+                              <Input placeholder="Penicillin" {...field} />
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
                           </FormItem>
                         )}
                       />
@@ -313,11 +382,10 @@ export default function OnboardingForm() {
                         name={`allergies.${index}.reaction`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">Reaction</FormLabel>
+                            <FieldLabel>Reaction</FieldLabel>
                             <FormControl>
-                              <Input placeholder="e.g., Hives" className="bg-white border-gray-300" {...field} />
+                              <Input placeholder="Hives, rash…" {...field} />
                             </FormControl>
-                            <FormMessage />
                           </FormItem>
                         )}
                       />
@@ -326,123 +394,146 @@ export default function OnboardingForm() {
                         name={`allergies.${index}.severity`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs text-gray-700">Severity</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g., Severe" className="bg-white border-gray-300" {...field} />
-                            </FormControl>
-                            <FormMessage />
+                            <FieldLabel>Severity</FieldLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select…" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="mild">Mild</SelectItem>
+                                <SelectItem value="moderate">Moderate</SelectItem>
+                                <SelectItem value="severe">Severe</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </FormItem>
                         )}
                       />
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeAllergy(index)} className="hover:bg-red-50 hover:text-red-600 text-gray-400">
+                    <button
+                      type="button"
+                      onClick={() => removeAllergy(index)}
+                      className="mt-5 shrink-0 transition-colors duration-200"
+                      style={{ color: 'var(--muted-foreground)' }}
+                      onMouseOver={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#9A3412'; }}
+                      onMouseOut={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
+                    >
                       <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </button>
                   </div>
                 ))}
-                <Button
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-gray-300 bg-white hover:bg-gray-50 text-blue-600 border-dashed w-full py-6"
                   onClick={() => appendAllergy({ substance: '', reaction: '', severity: '' })}
+                  className="w-full flex items-center justify-center gap-2 py-4 rounded-lg transition-colors duration-200"
+                  style={{
+                    border: '1px dashed var(--accent)',
+                    color: 'var(--accent)',
+                    background: 'rgba(184,134,11,0.03)',
+                    ...MONO,
+                    fontSize: '0.7rem',
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                  }}
                 >
-                  <Plus className="h-4 w-4 mr-2" /> Add Allergy
-                </Button>
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Allergy
+                </button>
+                {allergyFields.length === 0 && (
+                  <p className="text-center text-sm py-2" style={{ color: 'var(--muted-foreground)' }}>
+                    No allergies added — you can always add them later from the profile.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* STEP 4 */}
-            <div className={step === 4 ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Primary Care Provider</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="primary_provider_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-gray-700">Provider Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Dr. Smith" className="bg-white border-gray-300" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="primary_provider_phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-gray-700">Phone Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="(555) 123-4567" className="bg-white border-gray-300" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="primary_provider_email"
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel className="text-gray-700">Email Address</FormLabel>
-                        <FormControl>
-                          <Input placeholder="dr.smith@clinic.com" className="bg-white border-gray-300" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+            {/* ── Step 4: Contacts ── */}
+            <div className={step === 4 ? 'block' : 'hidden'}>
+              <div className="space-y-6">
+                <div>
+                  <SectionTitle>Primary Care Provider</SectionTitle>
+                  <p className="text-sm mb-5" style={{ color: 'var(--muted-foreground)' }}>Optional — you can add this later.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <FormField
+                      control={form.control}
+                      name="primary_provider_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FieldLabel>Provider Name</FieldLabel>
+                          <FormControl><Input placeholder="Dr. Smith" {...field} /></FormControl>
+                          <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="primary_provider_phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FieldLabel>Phone</FieldLabel>
+                          <FormControl><Input placeholder="(555) 123-4567" {...field} /></FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="primary_provider_email"
+                      render={({ field }) => (
+                        <FormItem className="sm:col-span-2">
+                          <FieldLabel>Email</FieldLabel>
+                          <FormControl><Input placeholder="dr.smith@clinic.com" {...field} /></FormControl>
+                          <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
 
-                <h3 className="text-lg font-medium text-gray-900 mt-6 pt-6 border-t border-gray-200">Emergency Contact</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="emergency_contact_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-gray-700">Contact Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Jane Doe" className="bg-white border-gray-300" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="emergency_contact_phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-gray-700">Phone Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="(555) 987-6543" className="bg-white border-gray-300" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <div className="h-px" style={{ background: 'var(--border)' }} />
+
+                <div>
+                  <SectionTitle>Emergency Contact</SectionTitle>
+                  <p className="text-sm mb-5" style={{ color: 'var(--muted-foreground)' }}>Optional — who to reach in an emergency.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <FormField
+                      control={form.control}
+                      name="emergency_contact_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FieldLabel>Contact Name</FieldLabel>
+                          <FormControl><Input placeholder="Jane Doe" {...field} /></FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="emergency_contact_phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FieldLabel>Phone</FieldLabel>
+                          <FormControl><Input placeholder="(555) 987-6543" {...field} /></FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* STEP 5 */}
-            <div className={step === 5 ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
-              <div className="space-y-4">
+            {/* ── Step 5: Consent & notes ── */}
+            <div className={step === 5 ? 'block' : 'hidden'}>
+              <div className="space-y-5">
                 <FormField
                   control={form.control}
                   name="consent_basis"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-gray-700">Consent Basis *</FormLabel>
+                      <FieldLabel>Your Relationship *</FieldLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
-                          <SelectTrigger className="bg-white border-gray-300">
-                            <SelectValue placeholder="Select consent basis" />
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select…" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -453,56 +544,94 @@ export default function OnboardingForm() {
                           <SelectItem value="informal_arrangement">Informal Arrangement</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="baseline_notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-gray-700">Baseline Notes</FormLabel>
+                      <FieldLabel>Baseline Notes</FieldLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Any general notes about the recipient's baseline health, mobility, or communication preferences..." 
-                          className="min-h-32 bg-white border-gray-300 resize-none"
-                          {...field} 
+                        <Textarea
+                          placeholder="General notes about baseline health, mobility, communication preferences, or anything the assistant should know…"
+                          className="resize-none"
+                          style={{ minHeight: '120px' }}
+                          {...field}
                         />
                       </FormControl>
-                      <FormMessage />
+                      <FormMessage className="text-xs" style={{ color: '#9A3412' }} />
                     </FormItem>
                   )}
                 />
 
                 {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm">
+                  <div
+                    className="p-4 rounded-lg text-sm leading-[1.6]"
+                    style={{ background: '#FEE8E8', border: '1px solid #F4AAAA', color: '#7F1D1D' }}
+                  >
                     {error}
                   </div>
                 )}
               </div>
             </div>
-          </form>
-        </Form>
-      </CardContent>
-      <CardFooter className="flex justify-between border-t border-gray-100 pt-6">
-        <Button
-          variant="outline"
-          className="border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
-          onClick={prevStep}
-          disabled={step === 1 || isSubmitting}
-        >
-          Previous
-        </Button>
-        {step < 5 ? (
-          <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 text-white border-0">Next</Button>
-        ) : (
-          <Button onClick={form.handleSubmit(onSubmit)} disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white border-0 shadow-sm">
-            {isSubmitting ? 'Saving...' : 'Complete Profile'}
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
+          </div>
+
+          {/* ── Footer navigation ──────────────────────────────── */}
+          <div
+            className="px-7 py-5 flex items-center justify-between"
+            style={{ borderTop: '1px solid var(--border)' }}
+          >
+            <button
+              type="button"
+              onClick={prevStep}
+              disabled={step === 1 || isSubmitting}
+              className="btn-outline-serif h-10 px-5 text-sm flex items-center gap-1.5 min-h-[40px] disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+
+            {/* Step dots */}
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: TOTAL }, (_, i) => (
+                <div
+                  key={i}
+                  className="rounded-full transition-all duration-300"
+                  style={{
+                    width: step === i + 1 ? '20px' : '6px',
+                    height: '6px',
+                    background: i + 1 <= step ? 'var(--accent)' : 'var(--border)',
+                  }}
+                />
+              ))}
+            </div>
+
+            {step < TOTAL ? (
+              <button
+                type="button"
+                onClick={nextStep}
+                className="btn-gold h-10 px-5 text-sm flex items-center gap-1.5 min-h-[40px]"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={form.handleSubmit(onSubmit)}
+                disabled={isSubmitting}
+                className="btn-gold h-10 px-6 text-sm min-h-[40px] disabled:opacity-50"
+              >
+                {isSubmitting ? 'Saving…' : 'Complete Profile'}
+              </button>
+            )}
+          </div>
+        </form>
+      </Form>
+    </div>
   );
 }

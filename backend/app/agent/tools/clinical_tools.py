@@ -296,14 +296,14 @@ async def search_documents(
 
     chunks = []
     for r in results:
-        payload = r.get("payload", {})
+        payload = r.payload
         chunks.append(DocumentChunk(
             document_name=payload.get("document_name", "Unknown"),
             document_type=payload.get("document_type", "other"),
             section=payload.get("section"),
             page_number=payload.get("page_number"),
-            text=payload.get("text", ""),
-            score=r.get("score", 0.0),
+            text=r.text,
+            score=r.score,
         ))
     return chunks
 

@@ -1,6 +1,3 @@
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-
 type Episode = {
   id: string;
   started_at: string;
@@ -11,22 +8,21 @@ type Episode = {
   symptoms: Array<{ name?: string; [key: string]: unknown }>;
 };
 
-type EpisodesListProps = {
-  episodes: Episode[];
+const MONO: React.CSSProperties = { fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+const SERIF: React.CSSProperties = { fontFamily: 'var(--font-playfair), Georgia, serif' };
+
+const urgencyStyle: Record<string, React.CSSProperties> = {
+  routine:   { background: 'var(--muted)',  color: 'var(--muted-foreground)', border: '1px solid var(--border)' },
+  same_day:  { background: '#FEF9EC', color: '#8B6914', border: '1px solid #F3E0A0' },
+  urgent:    { background: '#FEF3ED', color: '#9A3412', border: '1px solid #F8C8B0' },
+  emergency: { background: '#FEE8E8', color: '#7F1D1D', border: '1px solid #F4AAAA' },
 };
 
-const urgencyBadge: Record<string, string> = {
-  routine: 'bg-green-100 text-green-800',
-  same_day: 'bg-yellow-100 text-yellow-800',
-  urgent: 'bg-orange-100 text-orange-800',
-  emergency: 'bg-red-100 text-red-800',
-};
-
-const statusBadge: Record<string, string> = {
-  open: 'bg-blue-100 text-blue-800',
-  monitoring: 'bg-purple-100 text-purple-800',
-  resolved: 'bg-gray-100 text-gray-600',
-  escalated: 'bg-red-100 text-red-800',
+const statusStyle: Record<string, React.CSSProperties> = {
+  open:       { background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE' },
+  monitoring: { background: '#F5F3FF', color: '#5B21B6', border: '1px solid #DDD6FE' },
+  resolved:   { background: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' },
+  escalated:  { background: '#FEE8E8', color: '#7F1D1D', border: '1px solid #F4AAAA' },
 };
 
 function formatDate(iso: string): string {
@@ -37,42 +33,95 @@ function formatDate(iso: string): string {
   });
 }
 
-export function EpisodesList({ episodes }: EpisodesListProps) {
+export function EpisodesList({ episodes }: { episodes: Episode[] }) {
   if (episodes.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg text-sm">
-        No episodes recorded
+      <div className="py-16 text-center">
+        <p className="text-xl mb-2" style={SERIF}>No episodes recorded</p>
+        <p className="text-sm" style={{ ...MONO, color: 'var(--muted-foreground)', letterSpacing: '0.05em' }}>
+          Episodes will appear here once logged via chat
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {episodes.map((ep) => (
-        <Card key={ep.id} className="shadow-none">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium line-clamp-2">{ep.caregiver_description}</p>
-              <p className="text-xs text-muted-foreground shrink-0">{formatDate(ep.started_at)}</p>
+    <div>
+      <div className="mb-8">
+        <h2 className="text-2xl mb-1" style={SERIF}>Care Episodes</h2>
+        <p className="text-xs font-medium uppercase tracking-[0.12em]" style={{ ...MONO, color: 'var(--muted-foreground)' }}>
+          {episodes.length} episode{episodes.length !== 1 ? 's' : ''} logged
+        </p>
+      </div>
+
+      <div className="h-px" style={{ background: 'var(--border)' }} />
+
+      <ul>
+        {episodes.map((ep, i) => (
+          <li
+            key={ep.id}
+            className="py-6"
+            style={{ borderBottom: i < episodes.length - 1 ? '1px solid var(--border)' : 'none' }}
+          >
+            {/* Date + badges row */}
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <p className="text-xs font-medium uppercase tracking-[0.1em]" style={{ ...MONO, color: 'var(--muted-foreground)' }}>
+                {formatDate(ep.started_at)}
+              </p>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span
+                  className="text-xs font-medium px-2.5 py-0.5 rounded-full capitalize"
+                  style={{
+                    ...MONO,
+                    ...(urgencyStyle[ep.urgency_level] ?? urgencyStyle.routine),
+                  }}
+                >
+                  {ep.urgency_level.replace(/_/g, ' ')}
+                </span>
+                <span
+                  className="text-xs font-medium px-2.5 py-0.5 rounded-full capitalize"
+                  style={{
+                    ...MONO,
+                    ...(statusStyle[ep.status] ?? statusStyle.resolved),
+                  }}
+                >
+                  {ep.status}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              <span
-                className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${urgencyBadge[ep.urgency_level] ?? 'bg-gray-100 text-gray-700'}`}
-              >
-                {ep.urgency_level.replace(/_/g, ' ')}
-              </span>
-              <span
-                className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusBadge[ep.status] ?? 'bg-gray-100 text-gray-700'}`}
-              >
-                {ep.status}
-              </span>
-            </div>
+
+            {/* Description */}
+            <p className="text-sm leading-[1.75] mb-3" style={{ color: 'var(--foreground)' }}>
+              {ep.caregiver_description}
+            </p>
+
+            {/* AI assessment */}
             {ep.agent_assessment && (
-              <p className="text-xs text-muted-foreground line-clamp-2">{ep.agent_assessment}</p>
+              <div
+                className="mt-3 pl-4 text-sm leading-[1.75]"
+                style={{ borderLeft: '2px solid var(--border)', color: 'var(--muted-foreground)', fontStyle: 'italic' }}
+              >
+                {ep.agent_assessment}
+              </div>
             )}
-          </CardContent>
-        </Card>
-      ))}
+
+            {/* Symptoms */}
+            {ep.symptoms.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {ep.symptoms.map((s, j) => (
+                  <span
+                    key={j}
+                    className="text-xs px-2 py-0.5 rounded-full"
+                    style={{ ...MONO, border: '1px solid var(--border)', color: 'var(--muted-foreground)' }}
+                  >
+                    {s.name ?? String(s)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

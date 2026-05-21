@@ -1,6 +1,3 @@
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 
 type Medication = {
@@ -21,49 +18,96 @@ type MedicationsListProps = {
   onAddClick: () => void;
 };
 
+const MONO: React.CSSProperties = { fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+const SERIF: React.CSSProperties = { fontFamily: 'var(--font-playfair), Georgia, serif' };
+
 export function MedicationsList({ medications, onAddClick }: MedicationsListProps) {
   const active = medications.filter((m) => !m.stopped_at);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{active.length} active medication{active.length !== 1 ? 's' : ''}</p>
-        <Button size="sm" variant="outline" onClick={onAddClick} className="gap-1">
+    <div>
+      {/* Header */}
+      <div className="flex items-end justify-between mb-8">
+        <div>
+          <h2 className="text-2xl mb-1" style={SERIF}>Active Medications</h2>
+          <p className="text-xs font-medium uppercase tracking-[0.12em]" style={{ ...MONO, color: 'var(--muted-foreground)' }}>
+            {active.length} medication{active.length !== 1 ? 's' : ''} currently active
+          </p>
+        </div>
+        <button
+          onClick={onAddClick}
+          className="btn-outline-serif h-9 px-4 text-sm flex items-center gap-1.5 min-h-[36px]"
+        >
           <Plus className="h-3.5 w-3.5" />
           Add
-        </Button>
+        </button>
       </div>
 
-      {active.length > 0 ? (
-        <div className="space-y-2">
-          {active.map((med) => (
-            <Card key={med.id} className="shadow-none">
-              <CardContent className="p-4 flex justify-between items-start">
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">{med.display_name}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {med.dose && <Badge variant="secondary" className="text-xs">{med.dose}</Badge>}
-                    {med.frequency && <Badge variant="outline" className="text-xs">{med.frequency}</Badge>}
-                    {med.route && med.route !== 'oral' && (
-                      <Badge variant="outline" className="text-xs capitalize">{med.route}</Badge>
-                    )}
-                  </div>
-                  {med.prescribed_for && (
-                    <p className="text-xs text-muted-foreground">For: {med.prescribed_for}</p>
-                  )}
-                </div>
-                <div className="text-right text-xs text-muted-foreground shrink-0 ml-4">
-                  <p>Since {med.started_at}</p>
-                  {med.prescriber && <p>{med.prescriber}</p>}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      <div className="h-px mb-0" style={{ background: 'var(--border)' }} />
+
+      {active.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-xl mb-2" style={SERIF}>No active medications</p>
+          <p className="text-sm" style={{ ...MONO, color: 'var(--muted-foreground)', letterSpacing: '0.05em' }}>
+            Add the first medication using the button above
+          </p>
         </div>
       ) : (
-        <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg text-sm">
-          No active medications recorded
-        </div>
+        <ul>
+          {active.map((med, i) => (
+            <li
+              key={med.id}
+              className="py-5 flex items-start justify-between gap-4"
+              style={{ borderBottom: i < active.length - 1 ? '1px solid var(--border)' : 'none' }}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-medium mb-2">{med.display_name}</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {med.dose && (
+                    <span
+                      className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                      style={{ ...MONO, border: '1px solid var(--accent)', color: 'var(--accent)', background: 'rgba(184,134,11,0.05)' }}
+                    >
+                      {med.dose}
+                    </span>
+                  )}
+                  {med.frequency && (
+                    <span
+                      className="text-xs px-2.5 py-0.5 rounded-full"
+                      style={{ ...MONO, border: '1px solid var(--border)', color: 'var(--muted-foreground)' }}
+                    >
+                      {med.frequency}
+                    </span>
+                  )}
+                  {med.route && med.route !== 'oral' && (
+                    <span
+                      className="text-xs px-2.5 py-0.5 rounded-full capitalize"
+                      style={{ ...MONO, border: '1px solid var(--border)', color: 'var(--muted-foreground)' }}
+                    >
+                      {med.route}
+                    </span>
+                  )}
+                </div>
+                {med.prescribed_for && (
+                  <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                    For: {med.prescribed_for}
+                  </p>
+                )}
+              </div>
+
+              <div className="text-right shrink-0">
+                <p className="text-xs uppercase tracking-[0.1em]" style={{ ...MONO, color: 'var(--muted-foreground)' }}>
+                  Since {med.started_at}
+                </p>
+                {med.prescriber && (
+                  <p className="text-xs mt-0.5" style={{ ...MONO, color: 'var(--muted-foreground)' }}>
+                    {med.prescriber}
+                  </p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
