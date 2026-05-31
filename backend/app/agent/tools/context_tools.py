@@ -161,15 +161,20 @@ async def get_recent_episodes(
         .limit(limit)
     )
     rows = result.scalars().all()
+
+    def _normalize(items: list) -> list[dict]:
+        """Coerce legacy string entries to {\"name\": str} dicts."""
+        return [i if isinstance(i, dict) else {"name": str(i)} for i in (items or [])]
+
     return [
         EpisodeSummary(
             id=e.id,
             started_at=e.started_at,
             caregiver_description=e.caregiver_description,
-            symptoms=e.symptoms or [],
+            symptoms=_normalize(e.symptoms),
             agent_assessment=e.agent_assessment,
             urgency_level=e.urgency_level,
-            recommended_actions=e.recommended_actions or [],
+            recommended_actions=_normalize(e.recommended_actions),
             status=e.status,
             resolved_at=e.resolved_at,
             created_at=e.created_at,

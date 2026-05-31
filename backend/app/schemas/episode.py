@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.enums import EpisodeStatus, UrgencyLevel
 
@@ -24,3 +24,11 @@ class EpisodeResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("symptoms", "recommended_actions", "citations", mode="before")
+    @classmethod
+    def coerce_legacy_strings(cls, v: Any) -> list[dict[str, Any]]:
+        """Coerce legacy string entries (old seed data) to {\"name\": str} dicts."""
+        if not v:
+            return []
+        return [item if isinstance(item, dict) else {"name": str(item)} for item in v]

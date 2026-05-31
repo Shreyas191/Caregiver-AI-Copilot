@@ -23,6 +23,17 @@ export default function ChatPage() {
   const { messages, threadId, streaming, send, loadThread, startNewThread } =
     useChatStream(careRecipientId);
 
+  // Derive streaming phase from the last streaming message for header status text
+  const streamingMsg = streaming ? messages.findLast((m) => m.streaming) : null;
+  const hasActiveTool = streamingMsg?.toolCalls?.some((tc) => tc.status === 'calling') ?? false;
+  const hasAnyTool = (streamingMsg?.toolCalls?.length ?? 0) > 0;
+  const hasContent = Boolean(streamingMsg?.content);
+  const streamingLabel =
+    !streaming ? null
+    : hasActiveTool ? 'Getting data'
+    : hasAnyTool && !hasContent ? 'Generating'
+    : 'Responding';
+
   useEffect(() => {
     async function loadName() {
       try {
@@ -73,7 +84,7 @@ export default function ChatPage() {
               {recipientName}
             </span>
           )}
-          {streaming && (
+          {streamingLabel && (
             <span
               className="text-xs uppercase tracking-[0.1em] flex items-center gap-1.5"
               style={{ ...MONO, color: 'var(--accent)' }}
@@ -82,7 +93,7 @@ export default function ChatPage() {
                 className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
                 style={{ background: 'var(--accent)' }}
               />
-              Responding
+              {streamingLabel}
             </span>
           )}
         </div>

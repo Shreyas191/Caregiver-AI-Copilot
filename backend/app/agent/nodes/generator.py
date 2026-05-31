@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 10
 
-# Registry mapping stream_id → asyncio.Queue so the route can consume tokens
-# as the generator produces them.  Entries are added/removed by chat.py.
-_stream_queues: dict[str, asyncio.Queue] = {}
+# Registry mapping stream_id → asyncio.Queue so the route can consume events
+# (token chunks and tool-call notifications) as the generator produces them.
+_stream_queues: dict[str, asyncio.Queue] = {}  # Queue[dict | None]
 
 
 def register_stream(stream_id: str, queue: asyncio.Queue) -> None:
@@ -61,12 +61,14 @@ def _build_tool_map(tools: list[Tool]) -> dict[str, Tool]:
 
 
 async def _execute_tool(tool: Tool, arguments: dict) -> str:
-    if "care_recipient_id" in arguments and isinstance(arguments["care_recipient_id"], str):
-        arguments["care_recipient_id"] = uuid.UUID(arguments["care_recipient_id"])
-    if "episode_id" in arguments and isinstance(arguments["episode_id"], str):
-        arguments["episode_id"] = uuid.UUID(arguments["episode_id"])
-
     try:
+        # UUID coercions are inside the try-block so a malformed UUID from the LLM
+        # returns {"error": ...} to the model rather than crashing the graph.
+        if "care_recipient_id" in arguments and isinstance(arguments["care_recipient_id"], str):
+            arguments["care_recipient_id"] = uuid.UUID(arguments["care_recipient_id"])
+        if "episode_id" in arguments and isinstance(arguments["episode_id"], str):
+            arguments["episode_id"] = uuid.UUID(arguments["episode_id"])
+
         result = await tool.function(**arguments)
         if hasattr(result, "model_dump"):
             return json.dumps(result.model_dump(), default=str)
@@ -157,21 +159,16 @@ async def generator_node(state: AgentState, db: AsyncSession) -> dict[str, Any]:
 
     try:
         for iteration in range(MAX_TOOL_ITERATIONS):
-            response: ChatResponse = await provider.chat_with_tools(
+            response: ChatResponse = await provider.chat_with_tools_stream(
                 messages=messages,
                 model=model,
                 tools=tool_defs,
+                queue=queue,
             )
 
             if not response.tool_calls:
+                # Tokens were already streamed to the queue during the LLM call.
                 final_text = response.content or "I'm unable to generate a response."
-                if queue is not None:
-                    # Push already-fetched content word-by-word into the queue so
-                    # the SSE route streams to the frontend while the verifier runs.
-                    # No extra LLM call — reuses the response we already paid for.
-                    words = final_text.split(" ")
-                    for i, word in enumerate(words):
-                        await queue.put(word if i == 0 else " " + word)
                 return {
                     "final_response": final_text,
                     "tools_called": all_tool_calls_log,
@@ -204,7 +201,11 @@ async def generator_node(state: AgentState, db: AsyncSession) -> dict[str, Any]:
                     if tool is None:
                         result_str = json.dumps({"error": f"Unknown tool: {tool_name}"})
                     else:
+                        if queue is not None:
+                            await queue.put({"tool_call": {"name": tool_name, "status": "calling"}})
                         result_str = await _execute_tool(tool, dict(arguments))
+                        if queue is not None:
+                            await queue.put({"tool_call": {"name": tool_name, "status": "done"}})
 
                 all_tool_calls_log.append({
                     "iteration": iteration + 1,

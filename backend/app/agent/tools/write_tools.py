@@ -117,9 +117,9 @@ async def log_vital(
 
 async def log_episode(
     care_recipient_id: uuid.UUID,
-    started_at: str | None,
     caregiver_description: str,
     urgency_level: str,
+    started_at: str | None = None,
     symptoms: list[dict[str, Any]] | None = None,
     agent_assessment: str | None = None,
     recommended_actions: list[dict[str, Any]] | None = None,

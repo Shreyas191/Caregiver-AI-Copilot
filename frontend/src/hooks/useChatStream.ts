@@ -4,11 +4,17 @@ import { useCallback, useRef, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { consumeSSE } from '@/lib/sse';
 
+export type ToolCallEvent = {
+  name: string;
+  status: 'calling' | 'done';
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  toolCalls?: ToolCallEvent[];
 };
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api/v1';
@@ -94,6 +100,29 @@ export function useChatStream(careRecipientId: string) {
                       ? { ...m, content: m.content + parsed.token }
                       : m,
                   ),
+                );
+                return;
+              }
+              if (parsed.tool_call) {
+                const { name, status } = parsed.tool_call as ToolCallEvent;
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.toolCalls ?? [];
+                    if (status === 'calling') {
+                      return { ...m, toolCalls: [...existing, { name, status }] };
+                    }
+                    // Mark the last 'calling' entry for this tool name as 'done'
+                    let updated = false;
+                    const next = [...existing].reverse().map((tc) => {
+                      if (!updated && tc.name === name && tc.status === 'calling') {
+                        updated = true;
+                        return { ...tc, status: 'done' as const };
+                      }
+                      return tc;
+                    }).reverse();
+                    return { ...m, toolCalls: next };
+                  }),
                 );
               }
             } catch {

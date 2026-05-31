@@ -1,5 +1,6 @@
 """Abstract base class for all model providers."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
@@ -21,6 +22,24 @@ class ModelProvider(ABC):
         **kwargs,
     ) -> ChatResponse:
         """Send a chat request with tool definitions; parse any tool calls in the response."""
+        ...
+
+    @abstractmethod
+    async def chat_with_tools_stream(
+        self,
+        messages: list[Message],
+        model: str,
+        tools: list[ToolDefinition],
+        queue: "asyncio.Queue[dict] | None" = None,
+        **kwargs,
+    ) -> ChatResponse:
+        """Stream a tool-aware chat request.
+
+        Text tokens are pushed to queue as they arrive (only for final text
+        responses — tool-call iterations produce no queue output). Returns the
+        complete ChatResponse once the stream is exhausted so the caller can
+        inspect tool_calls and continue the loop unchanged.
+        """
         ...
 
     @abstractmethod

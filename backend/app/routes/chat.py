@@ -64,7 +64,7 @@ async def send_message(
         yield f"data: {json.dumps({'thread_id': str(thread.id)})}\n\n"
 
         stream_id = str(uuid.uuid4())
-        token_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        token_queue: asyncio.Queue[dict | None] = asyncio.Queue()
         register_stream(stream_id, token_queue)
 
         final_state: dict = {}
@@ -96,15 +96,17 @@ async def send_message(
 
         graph_task = asyncio.create_task(_run_graph())
 
-        # Forward tokens to the SSE stream as they arrive from the generator.
-        tokens_streamed = 0
+        # Forward events to the SSE stream as they arrive from the generator.
+        # Events are pre-formed dicts: {"token": "..."} or {"tool_call": {...}}
+        text_tokens_sent = 0
         try:
             while True:
-                token = await asyncio.wait_for(token_queue.get(), timeout=120.0)
-                if token is None:
+                event = await asyncio.wait_for(token_queue.get(), timeout=120.0)
+                if event is None:
                     break
-                tokens_streamed += 1
-                yield f"data: {json.dumps({'token': token})}\n\n"
+                if "token" in event:
+                    text_tokens_sent += 1
+                yield f"data: {json.dumps(event)}\n\n"
         except asyncio.TimeoutError:
             logger.warning("Token queue timed out for thread %s", thread.id)
             graph_task.cancel()
@@ -117,9 +119,9 @@ async def send_message(
                "Please try again or contact the care recipient's healthcare provider directly."
         )
 
-        # Fallback: if the generator never streamed (e.g. max-iterations hit or escalation
-        # path), push the final_response word-by-word so the frontend shows something.
-        if tokens_streamed == 0:
+        # Fallback: if no text was streamed (escalation path or max-iterations),
+        # send the final_response as token events so the frontend shows something.
+        if text_tokens_sent == 0:
             words = reply_content.split(" ")
             for i, word in enumerate(words):
                 yield f"data: {json.dumps({'token': word if i == 0 else ' ' + word})}\n\n"

@@ -7,6 +7,7 @@ The openai Python SDK normalises tool-call format differences across providers.
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 import openai
@@ -260,6 +261,104 @@ class OpenAICompatibleProvider(ModelProvider):
                 completion_tokens=usage.completion_tokens if usage else 0,
                 total_tokens=usage.total_tokens if usage else 0,
             ),
+        )
+
+    # ------------------------------------------------------------------
+    # chat_with_tools_stream
+    # ------------------------------------------------------------------
+
+    async def chat_with_tools_stream(
+        self,
+        messages: list[Message],
+        model: str,
+        tools: list[ToolDefinition],
+        queue: "asyncio.Queue[dict] | None" = None,
+        **kwargs,
+    ) -> ChatResponse:
+        """Stream a tool-aware completion.
+
+        Pushes content tokens to *queue* only when the model produces a final
+        text response (no tool calls). Tool-call iterations emit nothing to the
+        queue so intermediate reasoning is never surfaced to the user.
+
+        Determines response type from the first meaningful delta chunk:
+        - First chunk has tool_calls  → tool-call mode, queue stays silent
+        - First chunk has content     → text mode, every content chunk is queued
+        """
+        api_tools = [t.model_dump() for t in tools]
+        api_messages = self._to_api_messages(messages)
+        extra = self._models_extra(model)
+
+        full_content = ""
+        content_chunks: list[str] = []  # buffered; flushed to queue only if no tool calls
+        tool_call_chunks: dict[int, dict] = {}
+        finish_reason = None
+
+        async def _create():
+            return await self._client.chat.completions.create(
+                model=model,
+                messages=api_messages,
+                tools=api_tools,
+                stream=True,
+                extra_body=extra or None,
+                **kwargs,
+            )
+
+        stream = await self._with_backoff(_create)
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if chunk.choices[0].finish_reason:
+                finish_reason = chunk.choices[0].finish_reason
+
+            if delta.content:
+                full_content += delta.content
+                content_chunks.append(delta.content)
+
+            if delta.tool_calls:
+                for tc_chunk in delta.tool_calls:
+                    idx = tc_chunk.index
+                    if idx not in tool_call_chunks:
+                        tool_call_chunks[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc_chunk.id:
+                        tool_call_chunks[idx]["id"] = tc_chunk.id
+                    if tc_chunk.function:
+                        if tc_chunk.function.name:
+                            tool_call_chunks[idx]["name"] += tc_chunk.function.name
+                        if tc_chunk.function.arguments:
+                            tool_call_chunks[idx]["arguments"] += tc_chunk.function.arguments
+
+        tool_calls: list[ToolCall] = []
+        for idx in sorted(tool_call_chunks.keys()):
+            tc = tool_call_chunks[idx]
+            args = tc["arguments"]
+            try:
+                json.loads(args)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Streamed tool call '%s' has non-JSON arguments: %s", tc["name"], args
+                )
+                args = "{}"
+            tool_calls.append(
+                ToolCall(
+                    id=tc["id"] or str(uuid.uuid4()),
+                    function=ToolCallFunction(name=tc["name"], arguments=args),
+                )
+            )
+
+        # Only flush content to the queue when this is a final text response.
+        # Models like GLM-4.5-Air emit reasoning text before tool calls in the
+        # same turn; buffering until stream end lets us discard that preamble.
+        if queue is not None and not tool_calls:
+            for chunk in content_chunks:
+                await queue.put({"token": chunk})
+
+        return ChatResponse(
+            content=full_content or None,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=UsageInfo(),
         )
 
     # ------------------------------------------------------------------

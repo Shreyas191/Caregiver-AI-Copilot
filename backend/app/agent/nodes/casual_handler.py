@@ -35,15 +35,18 @@ async def casual_handler_node(state: AgentState) -> dict[str, Any]:
     provider = get_router_provider()
     queue = _stream_queues.get(state.get("stream_id", "") or "")
     try:
-        response = await provider.chat(
+        final_text = ""
+        async for chunk in provider.chat_stream(
             messages=api_messages,
             model=settings.router_model_name,
-        )
-        final_text = response.content or "How can I help you today?"
-        if queue is not None:
-            words = final_text.split(" ")
-            for i, word in enumerate(words):
-                await queue.put(word if i == 0 else " " + word)
+        ):
+            final_text += chunk
+            if queue is not None:
+                await queue.put({"token": chunk})
+        if not final_text:
+            final_text = "How can I help you today?"
+            if queue is not None:
+                await queue.put({"token": final_text})
         return {"final_response": final_text, "tools_called": []}
     finally:
         await provider.aclose()
